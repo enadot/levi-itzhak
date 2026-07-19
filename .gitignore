@@ -1,0 +1,10 @@
+# קבצי מדיה — לא נדחפים ל-git (היעד: Google Drive)
+*.mp3
+*.m4a
+*.webm
+*.part
+*.ytdl
+.downloaded.txt
+
+__pycache__/
+*.pyc
