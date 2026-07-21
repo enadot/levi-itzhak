@@ -10,10 +10,43 @@ import argparse
 import json
 import sys
 
+import yt_dlp
+
 from gilyon_common import (
     CATALOG_PATH, TORAH_ORDER, UNMATCHED_KEY, VIDEOS_ALL_PATH,
     detect_parsha, is_gilyon_title, item_sort_key, log, parse_part,
+    ydl_network_opts,
 )
+
+
+def enrich_dates(gilyon: list[dict], all_videos: list[dict]) -> None:
+    """
+    משלים תאריכים לסרטונים המסוננים בלבד (ב-flat-playlist אין תאריכים).
+    התוצאה נשמרת חזרה ל-videos_all.json כמטמון קבוע — לא יימשך שוב בהרצה הבאה.
+    """
+    need = [v for v in gilyon if not v.get("timestamp") and not v.get("upload_date")]
+    if not need:
+        return
+    log(f"🕐 משלים תאריכים ל-{len(need)} סרטונים (משיכת מטא-דאטה פרטנית)...")
+    opts = {"quiet": True, "no_warnings": True, **ydl_network_opts()}
+    done = 0
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        for v in need:
+            url = f"https://www.youtube.com/watch?v={v['id']}"
+            try:
+                info = ydl.extract_info(url, download=False)
+            except Exception as exc:
+                log(f"   ⚠️ לא נמשך תאריך עבור {v['id']}: {exc}")
+                continue
+            v["timestamp"] = info.get("release_timestamp") or info.get("timestamp")
+            v["upload_date"] = info.get("upload_date")
+            if info.get("duration"):
+                v["duration"] = info["duration"]
+            done += 1
+    VIDEOS_ALL_PATH.write_text(
+        json.dumps(all_videos, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    log(f"   הושלמו תאריכים ל-{done}/{len(need)} ונשמרו ל-{VIDEOS_ALL_PATH.name}")
 
 
 def build_catalog() -> dict:
@@ -26,6 +59,8 @@ def build_catalog() -> dict:
 
     gilyon = [v for v in videos if is_gilyon_title(v.get("title", ""))]
     log(f"🔎 זוהו {len(gilyon)} סרטוני \"ביאור הגליון\" (על כל הווריאציות)")
+
+    enrich_dates(gilyon, videos)
 
     parshiot: dict[str, list[dict]] = {}
     for v in gilyon:

@@ -5,6 +5,7 @@
 """
 
 import re
+import shutil
 import sys
 import unicodedata
 from pathlib import Path
@@ -29,9 +30,30 @@ def log(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
 
 
+def ydl_network_opts() -> dict:
+    """
+    אפשרויות רשת משותפות ל-yt-dlp.
+    בסביבות ענן יוטיוב חוסם את ה-client הרגיל ("Sign in to confirm you're not
+    a bot"); ה-client של הנגן המוטמע (web_embedded) עוקף זאת, ו-web נוסף כדי
+    להשלים תאריכים כשהוא זמין. פתרון אתגרי ה-JS (EJS) דורש Node 20+ או deno.
+    """
+    runtimes: dict[str, dict] = {"deno": {"path": None}}
+    node = next(
+        (p for p in ("/opt/node22/bin/node", shutil.which("node")) if p and Path(p).exists()),
+        None,
+    )
+    if node:
+        runtimes["node"] = {"path": node}
+    return {
+        "extractor_args": {"youtube": {"player_client": ["web_embedded", "web"]}},
+        "js_runtimes": runtimes,
+    }
+
+
 # --- זיהוי סרטוני "ביאור הגליון" ---
-# תופס: "ביאור הגליון", "ביאור גליון", "ביאור הגיליון" וכן וריאציות כתיב/מקף.
-GILYON_RE = re.compile(r"ביאור[\s\-]+ה?גי{0,2}ל{1,2}יון")
+# תופס: "ביאור הגליון", "ביאור גליון", "ביאור הגיליון" וגם "ביאור גליונות"
+# (הפורמט החדש: 'גליון ״בלק״ חלק ה (אות ב), ביאור גליונות...').
+GILYON_RE = re.compile(r"ביאור[\s\-]+ה?גי{0,2}ל{1,2}יו[נן]")
 
 
 def is_gilyon_title(title: str) -> bool:
@@ -124,30 +146,53 @@ def gematria(letters: str) -> int:
 
 
 _FRONT_PART_RE = re.compile(r"חלק\s+(?:ה?קדמי|קדמון)|(?<![\wא-ת])(?:קדמי|פתיחה|הקדמה)(?![\wא-ת])")
-# "אות ב" / "אות ב'" / "אות ב-ג" / "אות ב'-ג'" / "אות יא"
+_BACK_PART_RE = re.compile(r"חלק\s+ה?אחורי|(?<![\wא-ת])אחורי(?![\wא-ת])")
+# "אות ב" / "אות ב'" / "אות ב-ג" / "אות ב'-ג'" / "אות יא".
+# הטווח לא תופס "אות ו-המשך" בזכות שלילת המשך/סיום ודרישת סוף-מילה.
 _OT_RE = re.compile(
-    r"אות\s+([א-ת]{1,3})['׳]?(?:\s*[-–־]\s*(?:אות\s+)?([א-ת]{1,3})['׳]?)?"
+    r"אות\s+([א-ת]{1,2})['׳]?(?![א-ת])"
+    r"(?:\s*[-–־]\s*(?:אות\s+)?(?!המשך|סיום)([א-ת]{1,2})['׳]?(?![א-ת]))?"
 )
+# מספר חלק מפורש בפורמט החדש: "חלק ה", "חלק יב" (לא קדמי/אחורי — הם ארוכים מדי)
+_CHELEK_RE = re.compile(r"חלק\s+([א-ת]{1,2})['׳]?(?![א-ת])")
 
 
-def parse_part(title: str) -> tuple[tuple[int, int, int], str]:
+def parse_part(title: str) -> tuple[tuple[int, int, int, int, int], str]:
     """
     מחלץ מהכותרת את מפתח המיון של החלק ותווית קריאה.
-    מחזיר (sort_key, label) כאשר sort_key הוא:
-      (0, 0, 0)                  - חלק קדמי / פתיחה / הקדמה
-      (1, גימטריה ראשונה, שנייה) - "אות X" או "אות X-Y"
-      (2, 0, 0)                  - לא זוהה חלק (ימוין לפי תאריך)
+    מחזיר (sort_key, label) כאשר sort_key הוא
+    (דרגה, גימטריה ראשונה, גימטריה שנייה, המשך/סיום, מספר חלק מפורש):
+      דרגה 0 - חלק קדמי / פתיחה / הקדמה
+      דרגה 1 - "אות X" או "אות X-Y" (מפתחות לפי גימטריה)
+      דרגה 2 - חלק אחורי
+      דרגה 3 - לא זוהה חלק (ימוין לפי תאריך)
+    המשך/סיום: שיעור "המשך" (1) או "סיום" (2) ממוין אחרי השיעור הבסיסי (0).
+    מספר חלק מפורש ("חלק ה") משמש שובר שוויון לפני התאריך.
     """
     t = title or ""
-    if _FRONT_PART_RE.search(t):
-        return (0, 0, 0), "חלק קדמי"
+    cont = 2 if "סיום" in t else (1 if "המשך" in t else 0)
+    chelek_m = _CHELEK_RE.search(t)
+    chelek = gematria(chelek_m.group(1)) if chelek_m else 0
+
+    # "אות X" נבדק לפני "חלק קדמי", כדי ש"אות ג (הקדמה)" ישויך לאות ג
+    # ולא יסווג כחלק קדמי בגלל המילה "הקדמה".
     m = _OT_RE.search(t)
+    if not m and _FRONT_PART_RE.search(t):
+        label = "חלק קדמי" + ("-המשך" if cont == 1 else " (סיום)" if cont == 2 else "")
+        return (0, 0, 0, cont, chelek), label
     if m:
         first = gematria(m.group(1))
         second = gematria(m.group(2)) if m.group(2) else 0
         label = f"אות {m.group(1)}" + (f"-{m.group(2)}" if m.group(2) else "")
-        return (1, first, second), label
-    return (2, 0, 0), "לא זוהה"
+        if cont == 1:
+            label = f"המשך {label}"
+        elif cont == 2:
+            label = f"סיום {label}"
+        return (1, first, second, cont, chelek), label
+    if _BACK_PART_RE.search(t):
+        label = "חלק אחורי" + ("-המשך" if cont == 1 else " (סיום)" if cont == 2 else "")
+        return (2, 0, 0, cont, chelek), label
+    return (3, 0, 0, cont, chelek), "לא זוהה"
 
 
 def item_sort_key(item: dict) -> tuple:

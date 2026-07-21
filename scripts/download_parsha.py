@@ -17,7 +17,7 @@ import yt_dlp
 
 from gilyon_common import (
     CATALOG_PATH, DOWNLOAD_ROOT, INDEXES_DIR, UNMATCHED_KEY,
-    log, sanitize_filename,
+    log, sanitize_filename, ydl_network_opts,
 )
 
 
@@ -53,6 +53,7 @@ def download_item(item: dict, dest_dir, order: int) -> dict | None:
         "no_warnings": True,
         "noprogress": True,
         "download_archive": str(dest_dir / ".downloaded.txt"),
+        **ydl_network_opts(),
     }
     log(f"   ⬇️  מוריד: {item['title']}")
     try:
