@@ -87,6 +87,9 @@ def download_item(item: dict, dest_dir, order: int) -> dict | None:
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
+        # שידור חי שעוד לא הסתיים נדחה, ויורד בהרצה הבאה אחרי שיסתיים
+        "match_filter": yt_dlp.utils.match_filter_func(
+            "live_status!=?is_live & live_status!=?is_upcoming"),
         **ydl_network_opts(),
     }
     log(f"   ⬇️  מוריד: {item['title']}")
@@ -100,6 +103,9 @@ def download_item(item: dict, dest_dir, order: int) -> dict | None:
         return None
 
     if not (mp3_path.exists() and mp3_path.stat().st_size > 0):
+        if info and info.get("live_status") in ("is_live", "is_upcoming"):
+            log(f"   ⏳ שידור חי שעוד לא הסתיים — יירד בהרצה הבאה: {item['id']}")
+            return None
         log(f"   ❌ הקובץ {mp3_path.name} לא נוצר כמצופה")
         return None
     log(f"   ✅ הושלם: {mp3_path.name}")
