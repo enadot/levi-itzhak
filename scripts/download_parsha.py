@@ -21,9 +21,44 @@ from gilyon_common import (
 )
 
 
+def expected_base_name(item: dict) -> str:
+    return f"{item['order']:02d}_{sanitize_filename(item['title'])}"
+
+
+def realign_existing_files(dest_dir, items: list[dict]) -> None:
+    """
+    כששיעור חדש נכנס באמצע פרשה, המספור של השיעורים אחריו זז (05_ הופך ל-06_).
+    כאן משנים את שמות הקבצים הקיימים לפי index.json הקודם, במקום להוריד אותם שוב.
+    """
+    index_path = dest_dir / "index.json"
+    if not index_path.exists():
+        return
+    old = json.loads(index_path.read_text(encoding="utf-8"))
+    old_files = {it["video_id"]: it["mp3_file"] for it in old.get("items", [])}
+
+    moves = []
+    for item in items:
+        old_name = old_files.get(item["id"])
+        new_name = f"{expected_base_name(item)}.mp3"
+        if old_name and old_name != new_name and (dest_dir / old_name).exists():
+            moves.append((dest_dir / old_name, dest_dir / new_name, item["id"]))
+    if not moves:
+        return
+
+    # שני שלבים דרך שם זמני, כדי ש-05->06 ו-06->07 לא ידרסו זה את זה
+    temps = []
+    for src, dst, vid in moves:
+        tmp = dest_dir / f"__renaming_{vid}.mp3"
+        src.rename(tmp)
+        temps.append((tmp, dst))
+    for tmp, dst in temps:
+        tmp.rename(dst)
+        log(f"   🔀 מספור עודכן: {dst.name}")
+
+
 def download_item(item: dict, dest_dir, order: int) -> dict | None:
     """מוריד שיעור אחד כ-MP3. מחזיר רשומת אינדקס, או None בכישלון."""
-    base_name = f"{order:02d}_{sanitize_filename(item['title'])}"
+    base_name = expected_base_name(item)
     mp3_path = dest_dir / f"{base_name}.mp3"
 
     record = {
@@ -52,7 +87,6 @@ def download_item(item: dict, dest_dir, order: int) -> dict | None:
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
-        "download_archive": str(dest_dir / ".downloaded.txt"),
         **ydl_network_opts(),
     }
     log(f"   ⬇️  מוריד: {item['title']}")
@@ -72,10 +106,13 @@ def download_item(item: dict, dest_dir, order: int) -> dict | None:
     return record
 
 
-def download_parsha(name: str, items: list[dict]) -> None:
+def download_parsha(name: str, items: list[dict]) -> int:
+    """מוריד פרשה ומעדכן את ה-index שלה. מחזיר את מספר הכשלונות."""
     log(f"\n📖 פרשת {name} — {len(items)} שיעורים")
     dest_dir = DOWNLOAD_ROOT / name
     dest_dir.mkdir(parents=True, exist_ok=True)
+
+    realign_existing_files(dest_dir, items)
 
     index_items = []
     failures = 0
@@ -88,7 +125,7 @@ def download_parsha(name: str, items: list[dict]) -> None:
 
     if not index_items:
         log(f"⚠️ אף שיעור בפרשת {name} לא ירד — index.json לא נכתב")
-        return
+        return failures
 
     index = {"parsha": name, "items": index_items}
     index_path = dest_dir / "index.json"
@@ -99,6 +136,7 @@ def download_parsha(name: str, items: list[dict]) -> None:
     shutil.copy(index_path, INDEXES_DIR / f"{name}.json")
     log(f"🗂️  index.json נכתב לפרשת {name} "
         f"({len(index_items)} שיעורים" + (f", {failures} כשלונות" if failures else "") + ")")
+    return failures
 
 
 def main() -> int:
