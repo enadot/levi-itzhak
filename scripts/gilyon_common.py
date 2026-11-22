@@ -32,10 +32,8 @@ def log(msg: str) -> None:
 
 def ydl_network_opts() -> dict:
     """
-    אפשרויות רשת משותפות ל-yt-dlp.
-    בסביבות ענן יוטיוב חוסם את ה-client הרגיל ("Sign in to confirm you're not
-    a bot"); ה-client של הנגן המוטמע (web_embedded) עוקף זאת, ו-web נוסף כדי
-    להשלים תאריכים כשהוא זמין. פתרון אתגרי ה-JS (EJS) דורש Node 20+ או deno.
+    אפשרויות משותפות ל-yt-dlp: הפעלת סביבת JavaScript (deno או Node 20+),
+    ש-yt-dlp צריך כדי לחלץ פורמטים מיוטיוב.
     """
     runtimes: dict[str, dict] = {"deno": {"path": None}}
     node = next(
@@ -44,10 +42,7 @@ def ydl_network_opts() -> dict:
     )
     if node:
         runtimes["node"] = {"path": node}
-    return {
-        "extractor_args": {"youtube": {"player_client": ["web_embedded", "web"]}},
-        "js_runtimes": runtimes,
-    }
+    return {"js_runtimes": runtimes}
 
 
 # --- זיהוי סרטוני "ביאור הגליון" ---

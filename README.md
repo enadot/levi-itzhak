@@ -6,10 +6,30 @@
 
 ## דרישות
 
+- Python 3.10+
+- ffmpeg (Windows: `winget install ffmpeg` · Mac: `brew install ffmpeg` · Linux: `apt install ffmpeg`)
+- Node.js 20+ או deno — yt-dlp צריך סביבת JavaScript כדי לחלץ פורמטים מיוטיוב
+  (Windows: `winget install OpenJS.NodeJS.LTS` · Mac: `brew install node`)
+
 ```bash
-pip install yt-dlp
-# וכן ffmpeg מותקן במערכת (apt-get install ffmpeg / brew install ffmpeg)
+python -m pip install -U "yt-dlp[default]"
 ```
+
+חשוב להתקין עם `python -m pip` (ולא `pip` לבד), כדי ש-yt-dlp יותקן לאותה
+גרסת פייתון שמריצה את הסקריפטים.
+
+## הרצה על המחשב האישי
+
+```bash
+git clone https://github.com/enadot/levi-itzhak.git
+cd levi-itzhak
+git checkout claude/torah-lessons-youtube-archive-ebgr2l
+python scripts/download_parsha.py --parsha נשא   # פיילוט
+python scripts/download_parsha.py --all           # כל השאר
+```
+
+`videos_all.json` ו-`catalog.json` כבר נמצאים בריפו, כך שאין צורך להריץ את
+שלבים 1–2 שוב. ההורדה מדלגת על קבצים שכבר קיימים, כך שאפשר לעצור ולהמשיך.
 
 ## שלבי העבודה
 

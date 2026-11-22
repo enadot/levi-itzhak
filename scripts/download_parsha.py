@@ -86,6 +86,10 @@ def download_parsha(name: str, items: list[dict]) -> None:
         else:
             failures += 1
 
+    if not index_items:
+        log(f"⚠️ אף שיעור בפרשת {name} לא ירד — index.json לא נכתב")
+        return
+
     index = {"parsha": name, "items": index_items}
     index_path = dest_dir / "index.json"
     index_path.write_text(json.dumps(index, ensure_ascii=False, indent=2),
